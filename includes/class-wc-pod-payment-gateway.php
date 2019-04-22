@@ -140,7 +140,7 @@ class WC_Pod_Payment_Gateway {
 		function add_meta_boxesws()
 		{
 			add_meta_box( 'custom_order_meta_box', __( 'پی پاد | PayPod' ),
-				'custom_metabox_content', 'shop_order', 'normal', 'default');
+				'custom_metabox_content', 'shop_order', 'normal', 'high');
 		}
 
 		function custom_metabox_content(){
