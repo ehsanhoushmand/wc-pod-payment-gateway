@@ -215,56 +215,144 @@ function load_pod_gateway() {
 
 					$ott = $res_info->ott;
 
-					$server_url = $options['api_url'] . '/nzh/biz/issueInvoice/';
+					if($options['business_count'] == 0) {
+						$server_url = $options['api_url'] . '/nzh/biz/issueInvoice/';
 
-					$body = array(
-						'productId[]'     => 0,
-						'price[]'     => $Amount,
-						'quantity[]' => 1,
-						'productDescription[]' => $Description,
-						'guildCode' => $options['guild_code'],
-						'verificationNeeded' => 'true',
-						'preferredTaxRate' => 0
-					);
-					if(	get_user_meta(get_current_user_id(),'pod_user_id',true)){
-						$body['userId']= get_user_meta(get_current_user_id(),'pod_user_id',true);
+						$body = array(
+							'productId[]'     => 0,
+							'price[]'     => $Amount,
+							'quantity[]' => 1,
+							'productDescription[]' => $Description,
+							'guildCode' => $options['guild_code'],
+							'verificationNeeded' => 'true',
+							'preferredTaxRate' => 0
+						);
+						if(	get_user_meta(get_current_user_id(),'pod_user_id',true)){
+							$body['userId']= get_user_meta(get_current_user_id(),'pod_user_id',true);
+						}
+						$requestArray = array(
+							'method'      => 'POST',
+							'timeout'     => 45,
+							'redirection' => 5,
+							'httpversion' => '1.0',
+							'blocking'    => true,
+							'headers'     => array(
+								'_token_' => $options['api_token'],
+								'_token_issuer_' => '1',
+								'_ott_' => $ott
+							),
+							'body'        => $body,
+							'cookies'     => array(),
+							'sslverify'   => false
+						);
+						$response   = wp_remote_post( $server_url, $requestArray );
+
+						$res_info = json_decode( $response['body'] );
+
+						if ( isset( $res_info->hasError ) && $res_info->hasError ) {
+							wp_die( "Error code: ". $res_info->errorCode." refrenceNumber: ". $res_info->referenceNumber." message: ". $res_info->message );
+						}
+
+						if( get_user_meta(get_current_user_id(),'pod_user_id', true) ){//logged in by pod
+							$redirectUrl = $options["pay_invoice_url"] . "/?invoiceId=" . $res_info->result->id . "&redirectUri=$CallbackUrl";
+						}
+						else {
+							$new_url = str_replace("payinvoice", "payInvoiceByUniqueNumber", $options["pay_invoice_url"]); //For backward compatibility url is changed like this
+
+							$redirectUrl = $new_url . "/?uniqueNumber=" . $res_info->result->uniqueNumber . "&redirectUri=$CallbackUrl";
+						}
+
+						return array(
+							'result' => 'success',
+							'redirect' => $redirectUrl
+						);
+					} else {
+						$server_url = $options['api_url'] . '/nzh/biz/issueMultiInvoice/';
+						$body = [
+							'verificationNeeded' => 'true',
+							'preferredTaxRate' => 0,
+							'customerDescription' => $Description,
+						];
+						$total_shared_amount = 0;
+						for ($count = 0 ; $count < $options['business_count'] ; $count++)
+						{
+							$shared_amount = strpos($options['business_share_' . $count], '%') ? ($Amount * $options['business_share_' . $count]) / 100.0 : $options['business_share_' . $count];
+							$total_shared_amount += $shared_amount;
+							$body['subInvoices'][] = [
+								'businessId' => $options['business_id_' . $count],
+								'guildCode' => $options['guild_code_' . $count],
+								'description' => $Description,
+								'invoiceItemVOs' => [
+									[
+										'productId' => 0,
+										'price' => $shared_amount,
+										'quantity' => 1,
+										'description' => $Description,
+									]
+								],
+							];
+						}
+
+						if(	get_user_meta(get_current_user_id(),'pod_user_id',true)){
+							$body['userId']= get_user_meta(get_current_user_id(),'pod_user_id',true);
+						}
+						$body['mainInvoice'] = [
+							'guildCode' => $options['guild_code'],
+							'description' => $Description,
+							'invoiceItemVOs' => [
+								[
+									'productId' => 0,
+									'price' => $Amount - $total_shared_amount,
+									'quantity' => 1,
+									'description' => $Description,
+								]
+							],
+						];
+						$body['customerInvoiceItemVOs'][] = [
+							'productId' => 0,
+							'price' => $Amount,
+							'quantity' => 1,
+							'description' => $Description,
+						];
+
+						$requestArray = array(
+							'method'      => 'POST',
+							'timeout'     => 45,
+							'redirection' => 5,
+							'httpversion' => '1.0',
+							'blocking'    => true,
+							'headers'     => array(
+								'_token_' => $options['api_token'],
+								'_token_issuer_' => '1',
+								'_ott_' => $ott
+							),
+							'body'        => array(
+								'data' => json_encode($body)
+							),
+							'cookies'     => array(),
+							'sslverify'   => false
+						);
+						$response   = wp_remote_post( $server_url, $requestArray );
+						$res_info = json_decode( $response['body'] );
+
+						if ( isset( $res_info->hasError ) && $res_info->hasError ) {
+							wp_die( "Error code: ". $res_info->errorCode." refrenceNumber: ". $res_info->referenceNumber." message: ". $res_info->message );
+						}
+
+						if( get_user_meta(get_current_user_id(),'pod_user_id', true) ){//logged in by pod
+							$redirectUrl = $options["pay_invoice_url"] . "/?invoiceId=" . $res_info->result->customerInvoice->id . "&redirectUri=$CallbackUrl";
+						}
+						else {
+							$new_url = str_replace("payinvoice", "payInvoiceByUniqueNumber", $options["pay_invoice_url"]); //For backward compatibility url is changed like this
+
+							$redirectUrl = $new_url . "/?uniqueNumber=" . $res_info->result->uniqueNumber . "&redirectUri=$CallbackUrl";
+						}
+
+						return array(
+							'result' => 'success',
+							'redirect' => $redirectUrl
+						);
 					}
-					$requestArray = array(
-						'method'      => 'POST',
-						'timeout'     => 45,
-						'redirection' => 5,
-						'httpversion' => '1.0',
-						'blocking'    => true,
-						'headers'     => array(
-							'_token_' => $options['api_token'],
-							'_token_issuer_' => '1',
-							'_ott_' => $ott
-						),
-						'body'        => $body,
-						'cookies'     => array(),
-						'sslverify'   => false
-					);
-					$response   = wp_remote_post( $server_url, $requestArray );
-
-					$res_info = json_decode( $response['body'] );
-
-					if ( isset( $res_info->hasError ) && $res_info->hasError ) {
-						wp_die( "Error code: ". $res_info->errorCode." refrenceNumber: ". $res_info->referenceNumber." message: ". $res_info->message );
-					}
-
-					if( get_user_meta(get_current_user_id(),'pod_user_id', true) ){//logged in by pod
-						$redirectUrl = $options["pay_invoice_url"] . "/?invoiceId=" . $res_info->result->id . "&redirectUri=$CallbackUrl";
-					}
-					else {
-						$new_url = str_replace("payinvoice", "payInvoiceByUniqueNumber", $options["pay_invoice_url"]); //For backward compatibility url is changed like this
-
-						$redirectUrl = $new_url . "/?uniqueNumber=" . $res_info->result->uniqueNumber . "&redirectUri=$CallbackUrl";
-					}
-
-					return array(
-						'result' => 'success',
-						'redirect' => $redirectUrl
-					);
 
 				} catch (Exception $ex) {
 					wc_add_notice(  'Please try again.', 'error' );
