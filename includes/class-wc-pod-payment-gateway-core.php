@@ -21,7 +21,7 @@ function load_pod_gateway() {
 		if( !session_id() )
 			session_start();
 
-		$pod_only = 4;
+		$pod_only = 2;
 		$login_by_pod = false;
 		if( get_user_meta(get_current_user_id(),'pod_user_id') ){
 			$login_by_pod = true;
@@ -276,7 +276,7 @@ function load_pod_gateway() {
 						$total_shared_amount = 0;
 						for ($count = 0 ; $count < $options['business_count'] ; $count++)
 						{
-							$shared_amount = strpos($options['business_share_' . $count], '%') ? ($Amount * $options['business_share_' . $count]) / 100.0 : $options['business_share_' . $count];
+							$shared_amount = strpos($options['business_share_' . $count], '%') ? (int) round(($Amount * $options['business_share_' . $count]) / 100.0) : $options['business_share_' . $count];
 							$total_shared_amount += $shared_amount;
 							$body['subInvoices'][] = [
 								'businessId' => $options['business_id_' . $count],
