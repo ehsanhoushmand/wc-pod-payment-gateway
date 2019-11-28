@@ -188,9 +188,43 @@ function load_pod_gateway() {
 				$Email = !filter_var($Email, FILTER_VALIDATE_EMAIL) === false ? $Email : '';
 				$Mobile = preg_match('/^09[0-9]{9}/i', $Mobile) ? $Mobile : '';
 
+				if(! empty($options['avand_api_key']) && ! empty($options['avand_business_id'])) {
+					$server_url = $options['api_url'] . '/nzh/doServiceCall/';
+					$requestArray = array(
+						'method'      => 'POST',
+						'timeout'     => 45,
+						'redirection' => 5,
+						'httpversion' => '1.0',
+						'blocking'    => true,
+						'headers'     => array(
+							'_token_' => $options['api_token'],
+							'_token_issuer_' => '1'
+						),
+						'body'        => array(
+							'scProductId' => 29492,
+							'scApiKey' => $options['avand_api_key'],
+							'redirectUri' => $CallbackUrl,
+							'userId' => get_user_meta(get_current_user_id(),'pod_user_id',true) ?? 0,
+							'businessId' => $options['avand_business_id'],
+							'price' => $Amount,
+						),
+						'cookies'     => array(),
+						'sslverify'   => false
+					);
+					$response   = wp_remote_post( $server_url, $requestArray );
+					$res_info = json_decode( $response['body'] , true);
+					$avand_result = json_decode($res_info['result']['result'], true);
+					if(!$res_info['hasError'] && $avand_result['errorCode'] === 0) {
+						update_post_meta($order_id, '_payment_gateway', 'avand');
+						return array(
+							'result' => 'success',
+							'redirect' => $avand_result['result']['paymentUrl'],
+						);
+					}
+				}
+				update_post_meta($order_id, '_payment_gateway', 'pod');
 				// Pod IssueInvoice
 				try {
-
 					$server_url = $options['api_url'] . '/nzh/ott';
 					$requestArray = array(
 						'method'      => 'POST',
@@ -358,8 +392,6 @@ function load_pod_gateway() {
 					wc_add_notice(  'Please try again.', 'error' );
 					return;
 				}
-
-
 			}
 
 			public function redirect_from_pod() {
@@ -379,38 +411,81 @@ function load_pod_gateway() {
 
 				if ($order_id) {
 					$order = new WC_Order($order_id);
+					$payment_gateway = get_post_meta($order_id, '_payment_gateway', true);
+					$payment_gateway = empty($payment_gateway) ? 'pod' : $payment_gateway;
 					if ($order->get_status() != 'completed') {
 						if (isset($_GET['paymentBillNumber']) && $_GET['paymentBillNumber']) {
 
-							$server_url = $options['api_url'] . '/nzh/biz/verifyInvoice';
+							if($payment_gateway == 'pod') {
+								$server_url = $options['api_url'] . '/nzh/biz/verifyInvoice';
 
-							$requestArray = array(
-								'method'      => 'POST',
-								'timeout'     => 45,
-								'redirection' => 5,
-								'httpversion' => '1.0',
-								'blocking'    => true,
-								'headers'     => array(
-									'_token_' => $options['api_token'],
-									'_token_issuer_' => '1'
-								),
-								'body'        => array(
-									'id'    => $_GET['invoiceId']
-								),
-								'cookies'     => array(),
-								'sslverify'   => false
-							);
-							$response   = wp_remote_post( $server_url, $requestArray );
-							$res_info = json_decode( $response['body'] );
-							if ( isset( $res_info->error ) ) {
-								$Status = 'failed';
-								$Fault = '';
-								$Message = 'تراکنش ناموفق بود';
-							}else{
-								$Status = 'completed';
-								$Transaction_ID = $res_info->result->id;
-								$Fault = '';
-								$Message = '';
+								$requestArray = array(
+									'method'      => 'POST',
+									'timeout'     => 45,
+									'redirection' => 5,
+									'httpversion' => '1.0',
+									'blocking'    => true,
+									'headers'     => array(
+										'_token_' => $options['api_token'],
+										'_token_issuer_' => '1'
+									),
+									'body'        => array(
+										'id'    => $_GET['invoiceId']
+									),
+									'cookies'     => array(),
+									'sslverify'   => false
+								);
+								$response   = wp_remote_post( $server_url, $requestArray );
+								$res_info = json_decode( $response['body'] );
+								if( !$res_info->hasError && isset($res_info->result->id)) {
+									$Status = 'completed';
+									$Transaction_ID = $res_info->result->id;
+									$Fault = '';
+									$Message = '';
+								} else {
+									$Status = 'failed';
+									$Fault = '';
+									$Message = 'تراکنش ناموفق بود';
+								}
+							} else {
+								//close transaction with avand
+								$server_url = $options['api_url'] . '/nzh/doServiceCall/';
+								$requestArray = array(
+									'method'      => 'POST',
+									'timeout'     => 45,
+									'redirection' => 5,
+									'httpversion' => '1.0',
+									'blocking'    => true,
+									'headers'     => array(
+										'_token_' => $options['api_token'],
+										'_token_issuer_' => '1'
+									),
+									'body'        => array(
+										'scProductId' => 33601,
+										'scApiKey' => $options['avand_api_key'],
+										'invoiceId' => $_GET['invoiceId'],
+									),
+									'cookies'     => array(),
+									'sslverify'   => false
+								);
+								$response   = wp_remote_post( $server_url, $requestArray );
+								$res_info = json_decode( $response['body'] , true);
+								$avand_result = json_decode($res_info['result']['result'], true);
+
+								if( $res_info['hasError'] ){
+									$Status = 'failed';
+									$Fault = '';
+									$Message = 'تراکنش ناموفق بود';
+								} elseif ($avand_result && $avand_result['errorCode'] === 0) {
+									$Status = 'completed';
+									$Transaction_ID = $_GET['invoiceId'];
+									$Fault = '';
+									$Message = '';
+								} else {
+									$Status = 'failed';
+									$Fault = '';
+									$Message = $avand_result['message'];
+								}
 							}
 						} else {
 							$Status = 'failed';
@@ -445,8 +520,32 @@ function load_pod_gateway() {
 
 							wp_redirect(add_query_arg('wc_status', 'success', $this->get_return_url($order)));
 							exit;
-						}
-						else {
+						} else {
+							// cancel transaction with avand
+							$server_url = $options['api_url'] . '/nzh/doServiceCall/';
+							$requestArray = array(
+								'method'      => 'POST',
+								'timeout'     => 45,
+								'redirection' => 5,
+								'httpversion' => '1.0',
+								'blocking'    => true,
+								'headers'     => array(
+									'_token_' => $options['api_token'],
+									'_token_issuer_' => '1'
+								),
+								'body'        => array(
+									'scProductId' => 33606,
+									'scApiKey' => $options['avand_api_key'],
+									'invoiceId' => $_GET['invoiceId'],
+								),
+								'cookies'     => array(),
+								'sslverify'   => false
+							);
+							$response   = wp_remote_post( $server_url, $requestArray );
+							$res_info = json_decode( $response['body'] , true);
+							if( $res_info['hasError'] ){
+								wp_die("Pod Error , Error code: ".$res_info->errorCode);
+							}
 							$Transaction_ID = $Transaction_ID ?? 0;
 							$tr_id = ( isset($Transaction_ID) && $Transaction_ID != 0 ) ? ('<br/>توکن : ' . $Transaction_ID) : '';
 							$Note = sprintf(__('خطا در هنگام بازگشت از بانک : %s %s', 'woocommerce'), $Message, $tr_id);

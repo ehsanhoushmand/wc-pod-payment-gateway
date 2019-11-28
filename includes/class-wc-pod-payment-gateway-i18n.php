@@ -6,7 +6,7 @@
  * Loads and defines the internationalization files for this plugin
  * so that it is ready for translation.
  *
- * @link       http://pod.land
+ * @link       http://pod.ir
  * @since      1.0.0
  *
  * @package    WC_Pod_Payment_Gateway

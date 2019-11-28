@@ -6,7 +6,7 @@
  * A class definition that includes attributes and functions used across both the
  * public-facing side of the site and the admin area.
  *
- * @link       http://pod.land
+ * @link       http://pod.ir
  * @since      1.0.0
  *
  * @package    WC_Pod_Payment_Gateway
@@ -139,7 +139,10 @@ class WC_Pod_Payment_Gateway {
 		add_action( 'add_meta_boxes', 'add_meta_boxesws' );
 		function add_meta_boxesws()
 		{
-			add_meta_box( 'custom_order_meta_box', __( 'پی پاد | PayPod' ),
+			$payment_gateway = get_post_meta($_GET['post'] ?? '', '_payment_gateway', true);
+			$payment_gateway = empty($payment_gateway) ? 'pod' : $payment_gateway;
+
+			add_meta_box( 'custom_order_meta_box', __( $payment_gateway , 'wc-pod-payment-gateway'),
 				'custom_metabox_content', 'shop_order', 'normal', 'high');
 		}
 
@@ -149,67 +152,70 @@ class WC_Pod_Payment_Gateway {
 
 			$invoice_id = get_post_meta($post_id,'_transaction_id', true);
 			$invoice_state = get_post_meta($post_id,'_invoice_state', true);
+			$payment_gateway = get_post_meta($post_id, '_payment_gateway', true);
+			$payment_gateway = empty($payment_gateway) ? 'pod' : $payment_gateway;
 
 			if(isset($_GET['pod_job'])){
 				$options = get_option( 'podsso_options' );
 				if($_GET['pod_job']=='close'){
+				    if($payment_gateway === 'pod') {
+				        // close transaction with pod
+						$server_url = $options['api_url'] . '/nzh/biz/closeInvoice/?id='.$invoice_id;
+						$requestArray = array(
+							'method'      => 'GET',
+							'timeout'     => 45,
+							'redirection' => 5,
+							'httpversion' => '1.0',
+							'blocking'    => true,
+							'headers'     => array(
+								'_token_' => $options['api_token'],
+								'_token_issuer_' => '1',
+							),
+							'cookies'     => array(),
+							'sslverify'   => false
+						);
+						$response   = wp_remote_post( $server_url, $requestArray );
+						$res_info = json_decode( $response['body'] );
 
-					$server_url = $options['api_url'] . '/nzh/biz/closeInvoice/?id='.$invoice_id;
-
-					$requestArray = array(
-						'method'      => 'GET',
-						'timeout'     => 45,
-						'redirection' => 5,
-						'httpversion' => '1.0',
-						'blocking'    => true,
-						'headers'     => array(
-							'_token_' => $options['api_token'],
-							'_token_issuer_' => '1',
-						),
-						'cookies'     => array(),
-						'sslverify'   => false
-					);
-					$response   = wp_remote_post( $server_url, $requestArray );
-					$res_info = json_decode( $response['body'] );
-
-					if ( isset( $res_info->error ) ) {
-						wp_die( $res_info->error_description );
-					}
-					if( $res_info-> hasError ){
-						wp_die("Contact Admin, Error Code: ".$res_info->errorCode);
-					}
-					update_post_meta($post_id, '_invoice_state', 'closed');
-					$invoice_state = 'closed';
-
+						if ( isset( $res_info->error ) ) {
+							wp_die( $res_info->error_description );
+						}
+						if( $res_info->hasError ){
+							wp_die("Contact Admin, Error Code: ".$res_info->errorCode);
+						}
+						update_post_meta($post_id, '_invoice_state', 'closed');
+						$invoice_state = 'closed';
+                    }
 				}
 				else if($_GET['pod_job']=='cancel')
 				{
-					$server_url = $options['api_url'] . '/nzh/biz/cancelInvoice/?id='.$invoice_id;
-
-					$requestArray = array(
-						'method'      => 'GET',
-						'timeout'     => 45,
-						'redirection' => 5,
-						'httpversion' => '1.0',
-						'blocking'    => true,
-						'headers'     => array(
-							'_token_' => $options['api_token'],
-							'_token_issuer_' => '1',
-						),
-						'cookies'     => array(),
-						'sslverify'   => false
-					);
-					$response   = wp_remote_post( $server_url, $requestArray );
-					$res_info = json_decode( $response['body'] );
-
-					if ( isset( $res_info->error ) ) {
-						wp_die( $res_info->error_description );
-					}
-					if( $res_info-> hasError ){
-						wp_die("Contact Admin, Error Code: ".$res_info->errorCode);
-					}
-					update_post_meta($post_id, '_invoice_state', 'canceled');
-					$invoice_state = 'canceled';
+					if($payment_gateway === 'pod') {
+					    // cancel transaction with pod
+						$server_url = $options['api_url'] . '/nzh/biz/cancelInvoice/?id='.$invoice_id;
+						$requestArray = array(
+							'method'      => 'GET',
+							'timeout'     => 45,
+							'redirection' => 5,
+							'httpversion' => '1.0',
+							'blocking'    => true,
+							'headers'     => array(
+								'_token_' => $options['api_token'],
+								'_token_issuer_' => '1',
+							),
+							'cookies'     => array(),
+							'sslverify'   => false
+						);
+						$response   = wp_remote_post( $server_url, $requestArray );
+						$res_info = json_decode( $response['body'] );
+						if ( isset( $res_info->error ) ) {
+							wp_die( $res_info->error_description );
+						}
+						if( $res_info->hasError ){
+							wp_die("Contact Admin, Error Code: ".$res_info->errorCode);
+						}
+						update_post_meta($post_id, '_invoice_state', 'canceled');
+						$invoice_state = 'canceled';
+                    }
 				}
 			}
 
@@ -219,8 +225,10 @@ class WC_Pod_Payment_Gateway {
 			elseif ($invoice_state == 'open'){
 				?>
 				<ul><li><b>وضعیت فاکتور:</b><span> پرداخت شده | باز</span></li></ul>
-				<p><a href="?post=<?php echo $post_id; ?>&action=edit&pod_job=close" class="button"><?php _e('بستن فاکتور'); ?></a></p>
-				<p><a href="?post=<?php echo $post_id; ?>&action=edit&pod_job=cancel" class="button"><?php _e('ابطال فاکتور'); ?></a></p>
+                <?php if($payment_gateway != 'avand') { ?>
+				    <p><a href="?post=<?php echo $post_id; ?>&action=edit&pod_job=close" class="button"><?php _e('بستن فاکتور'); ?></a></p>
+                    <p><a href="?post=<?php echo $post_id; ?>&action=edit&pod_job=cancel" class="button"><?php _e('ابطال فاکتور'); ?></a></p>
+				<?php }?>
 				<?php
 			}
 			elseif ($invoice_state == 'canceled')

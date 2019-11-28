@@ -8,13 +8,13 @@
  * registers the activation and deactivation functions, and defines a function
  * that starts the plugin.
  *
- * @link              http://pod.land
+ * @link              http://pod.ir
  * @since             1.0.0
  * @package           WC_Pod_Payment_Gateway
  *
  * @wordpress-plugin
  * Plugin Name:       Pod Payment Gateway
- * Plugin URI:        http://pod.land
+ * Plugin URI:        http://pod.ir
  * Description:       Pod payment gateway of Woocommerce plugin
  * Version:           1.0.0
  * Author:            Ehsan Houshmand
